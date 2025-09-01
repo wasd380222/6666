@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>家庭门户 - 聊天</title>
+  <style>
+    body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif; margin:0; background:#f7f7f8; }
+    header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:#fff; border-bottom:1px solid #eee; position:sticky; top:0; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 18px; }
+    .panel { display:grid; grid-template-columns: 260px 1fr; gap: 16px; }
+    .sidebar { background:#fff; border-radius:14px; padding:12px; box-shadow:0 6px 24px rgba(0,0,0,.06); height: calc(100vh - 120px); overflow:auto; }
+    .chat { background:#fff; border-radius:14px; padding:12px; box-shadow:0 6px 24px rgba(0,0,0,.06); height: calc(100vh - 120px); display:flex; flex-direction:column; }
+    .list { list-style:none; padding:0; margin:0; }
+    .list li { padding:10px; border-radius:10px; cursor:pointer; }
+    .list li:hover { background:#f1f1f1; }
+    .list li.active { background:#111; color:#fff; }
+    .messages { flex:1; overflow:auto; padding: 8px; background:#fafafa; border-radius:10px; }
+    .msg { margin: 10px 0; line-height:1.7; white-space:pre-wrap; }
+    .user { color:#0a6; }
+    .assistant { color:#222; }
+    .composer { display:flex; gap:8px; margin-top:12px; }
+    textarea { flex:1; height: 100px; resize: vertical; border:1px solid #ddd; border-radius:10px; padding:10px; }
+    button { border:0; border-radius:10px; padding:10px 14px; background:#111; color:#fff; cursor:pointer; }
+    .muted { color:#666; font-size:12px; }
+    .row { display:flex; align-items:center; gap:10px; }
+    a { color:#06f; text-decoration:none; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="row">
+      <strong>家庭门户</strong>
+      <span id="who" class="muted"></span>
+    </div>
+    <div class="row">
+      <a href="/admin.html" id="adminLink" style="display:none">管理员</a>
+      <a href="/login.html" onclick="logout(event)" style="margin-left:12px;">退出</a>
+    </div>
+  </header>
+  <div class="wrap">
+    <div class="panel">
+      <aside class="sidebar">
+        <div class="row" style="justify-content:space-between;margin-bottom:8px;">
+          <b>会话</b>
+          <button onclick="newChat()">新建</button>
+        </div>
+        <ul id="chatList" class="list"></ul>
+      </aside>
+      <main class="chat">
+        <div id="meta" class="muted"></div>
+        <div id="messages" class="messages"></div>
+        <div class="composer">
+          <textarea id="input" placeholder="输入消息，Ctrl/Cmd+Enter 发送"></textarea>
+          <button id="sendBtn" onclick="send()">发送</button>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    let me = null;
+    let chatId = null;
+    let currentMessages = [];
+
+    async function fetchMe(){
+      const r = await fetch('/api/me');
+      if(!r.ok){ location.href = '/login.html'; return; }
+      const d = await r.json();
+      me = d.user;
+      document.getElementById('who').textContent = `（${me.name} · ${me.email}）`;
+      if(me.role === 'admin') document.getElementById('adminLink').style.display='block';
+      document.getElementById('meta').textContent = `今日统计：请求 ${d.usage.requests || 0} 次 · tokens ${d.usage.total_tokens || 0}`;
+    }
+
+    async function loadChats(){
+      const r = await fetch('/api/history');
+      const d = await r.json();
+      const $list = document.getElementById('chatList');
+      $list.innerHTML = '';
+      (d.chats || []).forEach(c => {
+        const li = document.createElement('li');
+        li.textContent = c.title || '未命名会话';
+        li.onclick = () => openChat(c.id, li);
+        li.dataset.id = c.id;
+        $list.appendChild(li);
+      });
+    }
+
+    async function openChat(id, el){
+      chatId = id;
+      const r = await fetch('/api/history/' + id);
+      if(!r.ok){ return; }
+      const d = await r.json();
+      const $list = document.getElementById('chatList').children;
+      for(const item of $list){ item.classList.toggle('active', item === el); }
+      currentMessages = d.messages || [];
+      renderMessages();
+    }
+
+    function renderMessages(){
+      const $box = document.getElementById('messages');
+      $box.innerHTML = (currentMessages || []).map(m => {
+        const cls = m.role === 'user' ? 'user' : 'assistant';
+        const who = m.role === 'user' ? '我' : '助手';
+        return `<div class="msg ${cls}"><b>${who}：</b>${(m.content || '').replace(/</g,'&lt;')}</div>`;
+      }).join('');
+      $box.scrollTop = $box.scrollHeight;
+    }
+
+    async function newChat(){
+      chatId = null;
+      currentMessages = [];
+      renderMessages();
+      document.getElementById('input').focus();
+    }
+
+    async function send(){
+      const $btn = document.getElementById('sendBtn');
+      const $input = document.getElementById('input');
+      const text = $input.value.trim();
+      if(!text) return;
+      $btn.disabled = true;
+      $input.value = '';
+
+      const msgs = [...(currentMessages || []), {role:'user', content:text}];
+      try{
+        const r = await fetch('/api/chat', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ messages: msgs, chatId })
+        });
+        const d = await r.json();
+        if(!r.ok){ throw new Error(d.error || '发送失败'); }
+        chatId = d.chatId || chatId;
+        // 重拉会话
+        const rr = await fetch('/api/history/' + chatId);
+        const dd = await rr.json();
+        currentMessages = dd.messages || [];
+        renderMessages();
+        loadChats();
+      }catch(e){
+        alert('❌ ' + e.message);
+      }finally{
+        $btn.disabled = false;
+      }
+    }
+
+    async function logout(e){
+      e.preventDefault();
+      await fetch('/api/auth/logout', { method:'POST' });
+      location.href = '/login.html';
+    }
+
+    document.getElementById('input').addEventListener('keydown', (e)=>{
+      if((e.metaKey || e.ctrlKey) && e.key === 'Enter'){ send(); }
+    });
+
+    (async function init(){
+      await fetchMe();
+      await loadChats();
+    })();
+  </script>
+</body>
+</html>

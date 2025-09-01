@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>管理员 - 家庭门户</title>
+  <style>
+    body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif; margin:0; background:#f7f7f8; }
+    header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:#fff; border-bottom:1px solid #eee; position:sticky; top:0; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 18px; }
+    table { width:100%; border-collapse: collapse; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 6px 24px rgba(0,0,0,.06); }
+    th, td { padding:10px; border-bottom:1px solid #eee; text-align:left; }
+    th { background:#fafafa; }
+    select, input { padding:6px 8px; border:1px solid #ddd; border-radius:8px; }
+    button { padding:6px 10px; border:0; border-radius:8px; background:#111; color:#fff; cursor:pointer; }
+    .row { display:flex; align-items:center; gap:10px; }
+    a { color:#06f; text-decoration:none; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="row">
+      <strong>管理员</strong>
+      <a href="/index.html" style="margin-left:10px;">返回聊天</a>
+    </div>
+    <div class="row">
+      <a href="/login.html" onclick="logout(event)">退出</a>
+    </div>
+  </header>
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr><th>ID</th><th>邮箱</th><th>昵称</th><th>角色</th><th>状态</th><th>重置密码</th><th>操作</th></tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+  <script>
+    async function fetchUsers(){
+      const r = await fetch('/api/users');
+      if(!r.ok){ alert('没有管理员权限'); location.href='/index.html'; return; }
+      const d = await r.json();
+      const $tbody = document.getElementById('tbody');
+      $tbody.innerHTML = '';
+      (d.users || []).forEach(u => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${u.id}</td>
+          <td>${u.email}</td>
+          <td>${u.name}</td>
+          <td>
+            <select data-id="${u.id}" data-k="role">
+              <option value="member" ${u.role==='member'?'selected':''}>member</option>
+              <option value="admin" ${u.role==='admin'?'selected':''}>admin</option>
+            </select>
+          </td>
+          <td>
+            <select data-id="${u.id}" data-k="disabled">
+              <option value="0" ${u.disabled? '': 'selected'}>启用</option>
+              <option value="1" ${u.disabled? 'selected': ''}>禁用</option>
+            </select>
+          </td>
+          <td>
+            <input type="text" placeholder="新密码" data-id="${u.id}" data-k="pwd" />
+          </td>
+          <td><button onclick="save(${u.id})">保存</button></td>
+        `;
+        $tbody.appendChild(tr);
+      });
+    }
+
+    async function save(id){
+      const role = document.querySelector(`select[data-id="${id}"][data-k="role"]`).value;
+      const disabled = document.querySelector(`select[data-id="${id}"][data-k="disabled"]`).value === '1';
+      const pwdInput = document.querySelector(`input[data-id="${id}"][data-k="pwd"]`);
+      const resetPassword = pwdInput.value.trim() || undefined;
+      const r = await fetch('/api/users/' + id, {
+        method:'PATCH',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ role, disabled, resetPassword })
+      });
+      const d = await r.json();
+      if(!r.ok){ alert(d.error || '保存失败'); return; }
+      alert('已保存');
+      pwdInput.value = '';
+    }
+
+    async function logout(e){
+      e.preventDefault();
+      await fetch('/api/auth/logout', { method:'POST' });
+      location.href = '/login.html';
+    }
+
+    fetchUsers(); fetchInvites();
+  
+
+async function fetchInvites(){
+  const r = await fetch('/api/invites');
+  if(!r.ok){ return; }
+  const d = await r.json();
+  const $tb = document.getElementById('inv-tbody');
+  $tb.innerHTML = '';
+  (d.invites || []).forEach(x => {
+    const tr = document.createElement('tr');
+    const created = x.created_at ? new Date(x.created_at*1000).toLocaleString() : '';
+    const expires = x.expires_at ? new Date(x.expires_at*1000).toLocaleString() : '—';
+    const status = x.active ? '有效' : '已吊销';
+    tr.innerHTML = `
+      <td><code>${x.code}</code></td>
+      <td>${x.note || ''}</td>
+      <td>${x.created_by || ''}</td>
+      <td>${created}</td>
+      <td>${expires}</td>
+      <td>${x.used_count}/${x.max_uses}</td>
+      <td>${status}</td>
+      <td>
+        <button onclick="copyCode('${"${x.code}"}')">复制</button>
+        <button onclick="revokeInvite('${"${x.code}"}')">吊销</button>
+      </td>
+    `;
+    $tb.appendChild(tr);
+  });
+}
+
+async function createInvite(){
+  const note = document.getElementById('inv-note').value.trim();
+  const maxUses = Number(document.getElementById('inv-uses').value || 1);
+  const expiresInDays = Number(document.getElementById('inv-days').value || 7);
+  const r = await fetch('/api/invites', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ note, maxUses, expiresInDays })
+  });
+  const d = await r.json();
+  if(!r.ok){ alert(d.error || '生成失败'); return; }
+  await fetchInvites();
+  alert('已生成：' + d.code);
+}
+
+async function revokeInvite(code){
+  if(!confirm('确认吊销邀请码 ' + code + ' ?')) return;
+  const r = await fetch('/api/invites/' + code + '/revoke', { method:'POST' });
+  const d = await r.json();
+  if(!r.ok){ alert(d.error || '吊销失败'); return; }
+  fetchInvites();
+}
+
+function copyCode(code){
+  navigator.clipboard.writeText(code).then(()=>alert('已复制：' + code));
+}
+
+      </script>
+</body>
+</html>

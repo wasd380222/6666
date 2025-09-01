@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>登录 / 注册 - 家庭门户</title>
+  <style>
+    body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif; margin:0; background:#f7f7f8; }
+    .wrap { max-width: 520px; margin: 8vh auto; padding: 24px; }
+    .card { background:#fff; border-radius:16px; box-shadow:0 8px 30px rgba(0,0,0,.07); padding:24px; }
+    h2 { margin: 0 0 12px; }
+    input { width: 100%; padding: 10px 12px; border:1px solid #ddd; border-radius:10px; margin:8px 0 12px; }
+    button { width:100%; padding: 12px 14px; border:0; border-radius:10px; background:#111; color:#fff; cursor:pointer; }
+    .row { display:flex; gap:10px; }
+    .msg { margin-top: 10px; color: #d00; min-height: 20px;}
+    a { color:#06f; text-decoration:none; }
+    .tabs { display:flex; gap:12px; margin-bottom: 10px; }
+    .tabs button { flex:1; background:#eee; color:#333; }
+    .tabs button.active { background:#111; color:#fff; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h2>家庭门户</h2>
+      <div class="tabs">
+        <button id="tab-login" class="active" onclick="switchTab('login')">登录</button>
+        <button id="tab-register" onclick="switchTab('register')">注册</button>
+      </div>
+      <div id="login-form">
+        <input id="lemail" type="email" placeholder="邮箱" />
+        <input id="lpassword" type="password" placeholder="密码" />
+        <button onclick="login()">登录</button>
+      </div>
+      <div id="register-form" style="display:none">
+        <input id="rname" type="text" placeholder="昵称" />
+        <input id="remail" type="email" placeholder="邮箱" />
+        <input id="rpassword" type="password" placeholder="密码（≥6位）" />
+            <input id="rinvite" type="text" placeholder="邀请码（必填）" />
+        <button onclick="register()">注册</button>
+        <div style="margin-top:8px;color:#666;font-size:12px;">管理员采用“邀请制注册”，请向管理员索取邀请码。</div>
+      </div>
+      <div id="msg" class="msg"></div>
+      <div style="margin-top:10px;"><a href="/index.html">返回首页</a></div>
+    </div>
+  </div>
+  <script>
+    function switchTab(name){
+      document.getElementById('tab-login').classList.toggle('active', name==='login');
+      document.getElementById('tab-register').classList.toggle('active', name==='register');
+      document.getElementById('login-form').style.display = name==='login' ? 'block' : 'none';
+      document.getElementById('register-form').style.display = name==='register' ? 'block' : 'none';
+      document.getElementById('msg').textContent = '';
+    }
+    async function login(){
+      const email = document.getElementById('lemail').value.trim();
+      const password = document.getElementById('lpassword').value.trim();
+      const r = await fetch('/api/auth/login',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({email,password})
+      });
+      const d = await r.json();
+      if(!r.ok){ document.getElementById('msg').textContent = d.error || '登录失败'; return; }
+      location.href = '/index.html';
+    }
+    async function register(){
+      const name = document.getElementById('rname').value.trim();
+      const email = document.getElementById('remail').value.trim();
+      const password = document.getElementById('rpassword').value.trim();
+      const r = await fetch('/api/auth/register',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        const invite = document.getElementById('rinvite').value.trim();
+            body: JSON.stringify({name,email,password,invite})
+      });
+      const d = await r.json();
+      if(!r.ok){ document.getElementById('msg').textContent = d.error || '注册失败'; return; }
+      location.href = '/index.html';
+    }
+  </script>
+</body>
+</html>
